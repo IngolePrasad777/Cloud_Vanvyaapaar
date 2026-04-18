@@ -1,0 +1,759 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Vanvyaapaar Highly Available Multi-AZ Split Architecture (VPC, ALBs, ASGs, RDS MySQL, S3)'
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    Default: vanvyaapaar-prod
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.0.10.0/24
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.0.11.0/24
+  InstanceType:
+    Description: Web and App EC2 instance type (t2.micro/t3.micro are free tier eligible)
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t2.micro, t3.micro, t3.small, t3.medium]
+    ConstraintDescription: Must be a valid EC2 instance type
+  DBInstanceClass:
+    Description: RDS Instance class
+    Type: String
+    Default: db.t3.micro
+  DBUsername:
+    Description: Database admin account username
+    Type: String
+    Default: admin
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: String
+    Default: ""
+  HostedZoneName:
+    Description: (Optional) Route 53 Hosted Zone Name (e.g., example.com.)
+    Type: String
+    Default: ""
+  GitRepositoryURL:
+    Description: Required standard URL configuration for the application's GitHub repository.
+    Type: String
+    Default: "https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git"
+
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
+  HasHostedZoneName: !Not [!Equals [!Ref HostedZoneName, ""]]
+
+Resources:
+  # ==============================
+  # 1. NETWORK TIER
+  # ==============================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Pub1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Pub2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Pri1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Pri2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+
+  # ==============================
+  # 2. SECURITY GROUPS
+  # ==============================
+  ExternalALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and HTTPS from anywhere
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from External ALB on port 80 and SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ExternalALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH access for troubleshooting
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from External ALB on port 8080 and SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ExternalALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH access for troubleshooting
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL access from Backend EC2
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+
+
+  # ==============================
+  # 3. COMPUTE: LOAD BALANCERS
+  # ==============================
+  ExternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-ex-alb
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ExternalALBSecurityGroup
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-frontend-tg
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200,302
+
+  ExternalListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref ExternalALB
+      Port: 80
+      Protocol: HTTP
+
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-backend-tg
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /public/products
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: 200,204
+
+  BackendListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ExternalListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /seller/*
+            - /public/*
+            - /buyer/*
+            - /auth/*
+            - /admin/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+
+
+  # ==============================
+  # 4. COMPUTE: AUTO SCALING GROUPS
+  # ==============================
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+      Policies:
+        - PolicyName: DBDiscoveryPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                Resource: "*"
+        - PolicyName: S3UploadPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "arn:aws:s3:::${EnvironmentName}-media-assets-${AWS::AccountId}/*"
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+
+  FrontendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        IamInstanceProfile:
+          Arn: !GetAtt AppInstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref FrontendSecurityGroup
+        ImageId: resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Redirect output to log file for debugging
+            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+            
+            echo "=== Frontend Deployment Started ==="
+            yum update -y
+            
+            # Install essentials
+            yum install -y git nginx nodejs npm
+            
+            # Add swap space to prevent Out Of Memory (OOM) during React build on 1GB instances
+            echo "Creating swap space..."
+            dd if=/dev/zero of=/swapfile bs=1M count=2048
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            
+            # Clone Repository
+            echo "Cloning repository..."
+            cd /home/ec2-user
+            git clone ${GitRepositoryURL} project
+            cd project/vanvyapaar-frontend
+            
+            # Create .env file with ALB backend URL
+            echo "Configuring environment variables..."
+            cat > .env <<EOF
+            VITE_API_URL=http://${ExternalALB.DNSName}
+            EOF
+            
+            # Install and build frontend statically
+            echo "Installing dependencies..."
+            npm install --legacy-peer-deps
+            
+            echo "Building React application..."
+            export NODE_OPTIONS="--max-old-space-size=2048"
+            npm run build
+            
+            # Configure Nginx
+            echo "Configuring Nginx..."
+            # Remove default server block
+            sed -i 's/default_server//g' /etc/nginx/nginx.conf || true
+            
+            # Copy our nginx config
+            if [ -f nginx.conf ]; then
+              cp nginx.conf /etc/nginx/conf.d/vanvyaapaar.conf
+            fi
+            
+            # Empty the default Nginx html directory
+            rm -rf /usr/share/nginx/html/*
+            
+            # Copy built files
+            if [ -d dist ]; then
+              echo "Copying dist files to nginx..."
+              cp -rf dist/* /usr/share/nginx/html/
+            elif [ -d build ]; then
+              echo "Copying build files to nginx..."
+              cp -rf build/* /usr/share/nginx/html/
+            fi
+            
+            # Start Nginx
+            echo "Starting Nginx..."
+            systemctl enable nginx
+            systemctl start nginx
+            
+            # Verify Nginx is running
+            if systemctl is-active --quiet nginx; then
+              echo "=== Frontend Deployment Successful ==="
+            else
+              echo "=== Frontend Deployment Failed - Nginx not running ==="
+              systemctl status nginx
+            fi
+
+  BackendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        IamInstanceProfile:
+          Arn: !GetAtt AppInstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref BackendSecurityGroup
+        ImageId: resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Redirect output to log file for debugging
+            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+            
+            echo "=== Backend Deployment Started ==="
+            yum update -y
+            
+            # Install Essentials
+            echo "Installing dependencies..."
+            yum install -y git java-17-amazon-corretto-devel jq mariadb105 maven
+            
+            # Clone Repository
+            echo "Cloning repository..."
+            cd /home/ec2-user
+            git clone ${GitRepositoryURL} project
+            cd project/vanpaayaar-backend
+            
+            # Build Spring Boot application
+            echo "Building Spring Boot application..."
+            if [ -f mvnw ]; then
+              chmod +x mvnw
+              ./mvnw clean package -DskipTests
+            else
+              mvn clean package -DskipTests
+            fi
+            
+            # Wait for RDS to be ready
+            echo "Waiting for RDS database to be ready..."
+            until mysqladmin ping -h ${RDSInstance.Endpoint.Address} --silent; do
+              echo "Database not ready yet, waiting..."
+              sleep 10
+            done
+            echo "Database is ready!"
+            
+            # Fetch RDS credentials from AWS Secrets Manager
+            echo "Fetching database credentials..."
+            SECRET_ARN=$(aws rds describe-db-instances \
+              --db-instance-identifier ${RDSInstance} \
+              --query "DBInstances[0].MasterUserSecret.SecretArn" \
+              --region ${AWS::Region} \
+              --output text)
+            
+            SECRET_JSON=$(aws secretsmanager get-secret-value \
+              --secret-id $SECRET_ARN \
+              --region ${AWS::Region} \
+              --query SecretString \
+              --output text)
+            
+            DB_USER=$(echo $SECRET_JSON | jq -r .username)
+            DB_PASS=$(echo $SECRET_JSON | jq -r .password)
+            DB_HOST=${RDSInstance.Endpoint.Address}
+            
+            echo "Database credentials retrieved successfully"
+            
+            # Import dump.sql if it exists
+            echo "Checking for database dump file..."
+            cd /home/ec2-user/project
+            if [ -f dump.sql ]; then
+              echo "Found dump.sql, importing database..."
+              mysql -h $DB_HOST -u $DB_USER -p$DB_PASS vanvyaapaar < dump.sql
+              echo "Database dump imported successfully!"
+            else
+              echo "No dump.sql found, database will be initialized by Spring Boot"
+              
+              # Create initial admin user if no dump exists
+              echo "Creating initial admin user..."
+              mysql -h $DB_HOST -u $DB_USER -p$DB_PASS vanvyaapaar <<'EOSQL'
+            INSERT INTO basetable (name, email, password, confirm_password, phone, address, pincode, created_at)
+            VALUES ('Admin', 'admin@vanvyaapaar.com', 'admin123', 'admin123', '9999999999', 'Admin Office', '000000', NOW())
+            ON DUPLICATE KEY UPDATE name=name;
+            
+            INSERT INTO admins (user_id)
+            SELECT id FROM basetable WHERE email = 'admin@vanvyaapaar.com'
+            ON DUPLICATE KEY UPDATE user_id=user_id;
+            EOSQL
+              echo "Initial admin user created"
+            fi
+            
+            # Start Spring Boot application
+            echo "Starting Spring Boot application..."
+            cd /home/ec2-user/project/vanpaayaar-backend
+            
+            # Get S3 bucket name and CloudFront URL from CloudFormation
+            BUCKET_NAME="${MediaBucket}"
+            CLOUDFRONT_URL="https://${CloudFrontDistribution.DomainName}"
+            
+            nohup java -jar target/*.jar \
+              --spring.datasource.url=jdbc:mysql://$DB_HOST:3306/vanvyaapaar \
+              --spring.datasource.username=$DB_USER \
+              --spring.datasource.password=$DB_PASS \
+              --server.port=8080 \
+              --aws.s3.bucket-name=$BUCKET_NAME \
+              --aws.cloudfront.url=$CLOUDFRONT_URL \
+              > /var/log/springboot.log 2>&1 &
+            
+            SPRING_PID=$!
+            echo "Spring Boot started with PID: $SPRING_PID"
+            
+            # Wait for Spring Boot to be ready
+            echo "Waiting for Spring Boot to start..."
+            for i in {1..60}; do
+              if curl -s http://localhost:8080/public/products > /dev/null 2>&1; then
+                echo "=== Backend Deployment Successful ==="
+                echo "Spring Boot is ready and responding!"
+                exit 0
+              fi
+              echo "Attempt $i/60: Spring Boot not ready yet..."
+              sleep 3
+            done
+            
+            echo "=== Backend Deployment Warning ==="
+            echo "Spring Boot did not respond within 3 minutes"
+            echo "Check logs: tail -f /var/log/springboot.log"
+
+  FrontendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref FrontendLaunchTemplate
+        Version: !GetAtt FrontendLaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      MaxSize: '2'
+      TargetGroupARNs:
+        - !Ref FrontendTargetGroup
+
+  FrontendScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FrontendASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+
+  BackendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: RDSInstance
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BackendLaunchTemplate
+        Version: !GetAtt BackendLaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      MaxSize: '2'
+      TargetGroupARNs:
+        - !Ref BackendTargetGroup
+
+  BackendScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref BackendASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+
+
+  # ==============================
+  # 5. DATA TIER: RDS & S3
+  # ==============================
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '20'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: '8.0'
+      MasterUsername: !Ref DBUsername
+      ManageMasterUserPassword: true
+      DBName: vanvyaapaar
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      MultiAZ: false
+      StorageType: gp2
+      PubliclyAccessible: false
+
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-media-assets-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${EnvironmentName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  MediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MediaBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${MediaBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - DomainName: !GetAtt MediaBucket.RegionalDomainName
+            Id: S3Origin
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  FrontendDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZoneName
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub app.${HostedZoneName}
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt ExternalALB.CanonicalHostedZoneID
+        DNSName: !GetAtt ExternalALB.DNSName
+        EvaluateTargetHealth: true
+
+  CDNDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZoneName
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub cdn.${HostedZoneName}
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2  # Fixed ID for CloudFront
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
+Outputs:
+  FrontendURL:
+    Description: URL to access the Frontend React Application
+    Value: !Sub "http://${ExternalALB.DNSName}"
+    Export:
+      Name: !Sub ${EnvironmentName}-FrontendURL
+  
+  BackendURL:
+    Description: URL to access the Backend API
+    Value: !Sub "http://${ExternalALB.DNSName}"
+    Export:
+      Name: !Sub ${EnvironmentName}-BackendURL
+  
+  CloudFrontURL:
+    Description: URL to access the CloudFront CDN distribution for media assets
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Export:
+      Name: !Sub ${EnvironmentName}-CloudFrontURL
+  
+  MediaBucketName:
+    Description: S3 Bucket name for product images and media assets
+    Value: !Ref MediaBucket
+    Export:
+      Name: !Sub ${EnvironmentName}-MediaBucket
+  
+  RDSEndpoint:
+    Description: RDS MySQL Database Endpoint
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: !Sub ${EnvironmentName}-RDSEndpoint
+  
+  DatabaseName:
+    Description: Database Name
+    Value: vanvyaapaar
+  
+  AdminLoginCredentials:
+    Description: Default admin login credentials
+    Value: "Email: admin@vanvyaapaar.com | Password: admin123"
