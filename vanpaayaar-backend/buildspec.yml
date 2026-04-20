@@ -1,0 +1,38 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto17
+    commands:
+      - echo "Java version:"
+      - java -version
+  
+  pre_build:
+    commands:
+      - echo "Preparing Maven build..."
+      - chmod +x mvnw
+  
+  build:
+    commands:
+      - echo "Building Spring Boot application..."
+      - ./mvnw clean package -DskipTests
+      - echo "Build completed successfully"
+  
+  post_build:
+    commands:
+      - echo "Listing build artifacts..."
+      - ls -la target/
+      - echo "JAR file:"
+      - ls -lh target/*.jar
+
+artifacts:
+  files:
+    - target/*.jar
+    - appspec.yml
+    - scripts/**/*
+  name: backend-build-$(date +%Y%m%d-%H%M%S)
+
+cache:
+  paths:
+    - '/root/.m2/**/*'

@@ -5,15 +5,28 @@
 # Java / Spring Boot
 target/
 *.log
+*.class
 
 # Node / React
 node_modules/
 build/
 dist/
+coverage/
 
-# Env files
+# Environment files
 .env
+.env.*
+!.env.example
 
-# Misc
-*.class
+# AWS / Keys / Security
+*.pem
+*.key
 
+# CI/CD & Misc
+*.zip
+*.tar
+*.gz
+
+# Optional (if using logs/temp)
+logs/
+tmp/

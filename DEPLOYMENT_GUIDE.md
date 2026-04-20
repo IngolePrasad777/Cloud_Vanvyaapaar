@@ -1,5 +1,53 @@
 # 🚀 VanVyaapaar AWS Deployment Guide
 
+## ⚡ QUICK START CHECKLIST
+
+**⚠️ IMPORTANT: You're using PowerShell on Windows!**
+- PowerShell uses **backtick (`)** for line continuation, NOT backslash (\)
+- All commands in this guide have both PowerShell and Bash versions
+
+**Before you deploy, make sure:**
+1. ✅ All code changes committed to GitHub: `https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git`
+2. ✅ AWS CLI installed and configured: `aws configure`
+3. ✅ EC2 key pair created: `vanvyaapaar-key.pem`
+4. ✅ Files verified:
+   - `nginx.conf` has `listen 80;` (NOT 3000)
+   - `dump.sql` exists in root directory
+   - `S3Service.java` and `ImageUploadController.java` exist
+   - `infrastructure.yaml` has your GitHub URL
+
+**Then run:**
+
+**For PowerShell (Windows):**
+```powershell
+aws cloudformation create-stack `
+  --stack-name vanvyaapaar-prod `
+  --template-body file://infrastructure.yaml `
+  --parameters ParameterKey=KeyName,ParameterValue=vanvyaapaar-key `
+  --capabilities CAPABILITY_IAM `
+  --region us-east-1
+```
+
+**For Bash/Linux/Mac:**
+```bash
+aws cloudformation create-stack \
+  --stack-name vanvyaapaar-prod \
+  --template-body file://infrastructure.yaml \
+  --parameters ParameterKey=KeyName,ParameterValue=vanvyaapaar-key \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-1
+```
+
+**Wait 25-35 minutes, then get your URL:**
+```bash
+aws cloudformation describe-stacks \
+  --stack-name vanvyaapaar-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' \
+  --output text
+```
+
+---
+
 ## ✅ ALL ISSUES FIXED
 
 ### What Was Fixed:
@@ -25,6 +73,19 @@
 - [ ] Choose region (e.g., us-east-1, ap-south-1)
 
 ### 2. **EC2 Key Pair (for SSH access)**
+
+**For PowerShell (Windows):**
+```powershell
+# Create a new key pair
+aws ec2 create-key-pair `
+  --key-name vanvyaapaar-key `
+  --query 'KeyMaterial' `
+  --output text | Out-File -Encoding ASCII -FilePath vanvyaapaar-key.pem
+
+# Note: PowerShell uses backtick (`) for line continuation, not backslash (\)
+```
+
+**For Bash/Linux/Mac:**
 ```bash
 # Create a new key pair
 aws ec2 create-key-pair \
@@ -38,9 +99,36 @@ chmod 400 vanvyaapaar-key.pem
 
 ### 3. **GitHub Repository**
 - [ ] Code pushed to GitHub
-- [ ] Repository URL: `https://github.com/samikshamulik/Cloud_Vanvyaapaar.git`
+- [ ] Repository URL: `https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git`
 - [ ] Verify nginx.conf has `listen 80;`
 - [ ] Verify dump.sql is in root directory
+- [ ] Verify S3Service.java and ImageUploadController.java are committed
+
+**Files that MUST be in your GitHub repo:**
+```
+Cloud_Vanvyaapaar/
+├── infrastructure.yaml                    ✅ (Updated with your GitHub URL)
+├── dump.sql                               ✅ (Your database dump)
+├── vanpaayaar-backend/
+│   ├── pom.xml                           ✅ (Updated with AWS SDK)
+│   ├── src/main/java/com/tribal/
+│   │   ├── controller/
+│   │   │   └── ImageUploadController.java ✅ (NEW - for S3 uploads)
+│   │   └── service/
+│   │       └── S3Service.java            ✅ (NEW - S3 operations)
+│   └── src/main/resources/
+│       └── application.properties        ✅ (Updated with S3 config)
+└── vanvyapaar-frontend/
+    └── nginx.conf                        ✅ (Updated to listen 80)
+```
+
+**Before deploying, commit and push:**
+```bash
+cd Cloud_Vanvyaapaar
+git add .
+git commit -m "Fixed all deployment issues + added S3 backend integration"
+git push origin main
+```
 
 ---
 
@@ -53,6 +141,23 @@ aws cloudformation validate-template \
 ```
 
 ### **Step 2: Deploy the Stack**
+
+**For PowerShell (Windows):**
+```powershell
+aws cloudformation create-stack `
+  --stack-name vanvyaapaar-prod `
+  --template-body file://infrastructure.yaml `
+  --parameters `
+    ParameterKey=EnvironmentName,ParameterValue=vanvyaapaar-prod `
+    ParameterKey=KeyName,ParameterValue=vanvyaapaar-key `
+    ParameterKey=InstanceType,ParameterValue=t3.micro `
+    ParameterKey=DBInstanceClass,ParameterValue=db.t3.micro `
+    ParameterKey=GitRepositoryURL,ParameterValue=https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git `
+  --capabilities CAPABILITY_IAM `
+  --region us-east-1
+```
+
+**For Bash/Linux/Mac:**
 ```bash
 aws cloudformation create-stack \
   --stack-name vanvyaapaar-prod \
@@ -62,12 +167,27 @@ aws cloudformation create-stack \
     ParameterKey=KeyName,ParameterValue=vanvyaapaar-key \
     ParameterKey=InstanceType,ParameterValue=t3.micro \
     ParameterKey=DBInstanceClass,ParameterValue=db.t3.micro \
-    ParameterKey=GitRepositoryURL,ParameterValue=https://github.com/samikshamulik/Cloud_Vanvyaapaar.git \
+    ParameterKey=GitRepositoryURL,ParameterValue=https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git \
   --capabilities CAPABILITY_IAM \
   --region us-east-1
 ```
 
 ### **Step 3: Monitor Stack Creation**
+
+**For PowerShell (Windows):**
+```powershell
+# Watch stack events
+aws cloudformation describe-stack-events `
+  --stack-name vanvyaapaar-prod `
+  --query 'StackEvents[*].[Timestamp,ResourceStatus,ResourceType,LogicalResourceId]' `
+  --output table
+
+# Or use wait command
+aws cloudformation wait stack-create-complete `
+  --stack-name vanvyaapaar-prod
+```
+
+**For Bash/Linux/Mac:**
 ```bash
 # Watch stack events
 aws cloudformation describe-stack-events \
@@ -179,11 +299,110 @@ CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
 
 # Access image via CloudFront
 curl -I $CLOUDFRONT_URL/products/test-image.jpg
+
+# Test image upload via backend API
+curl -X POST $FRONTEND_URL/upload/product-image \
+  -F "file=@test-image.jpg"
+# Expected: {"imageUrl":"https://xxx.cloudfront.net/products/uuid.jpg","message":"Image uploaded successfully"}
 ```
 
 ---
 
-## 🔍 TROUBLESHOOTING
+## � VERIFY CONNECTIONS AFTER DEPLOYMENT
+
+### **1. Verify Frontend → Backend Connection**
+```bash
+# SSH to frontend instance
+FRONTEND_INSTANCE=$(aws ec2 describe-instances \
+  --filters "Name=tag:aws:autoscaling:groupName,Values=*Frontend*" \
+           "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+  --output text)
+
+ssh -i vanvyaapaar-key.pem ec2-user@$FRONTEND_INSTANCE
+
+# Check the built .env file
+cd /home/ec2-user/project/vanvyapaar-frontend
+cat .env
+# Should show: VITE_API_URL=http://vanvyaapaar-prod-ex-alb-XXXXX.elb.amazonaws.com
+
+# Check built files contain ALB URL
+grep -r "elb.amazonaws.com" dist/assets/*.js
+# Should find the ALB URL in the built JavaScript files
+```
+
+### **2. Verify Backend → RDS Connection**
+```bash
+# SSH to backend instance
+BACKEND_INSTANCE=$(aws ec2 describe-instances \
+  --filters "Name=tag:aws:autoscaling:groupName,Values=*Backend*" \
+           "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+  --output text)
+
+ssh -i vanvyaapaar-key.pem ec2-user@$BACKEND_INSTANCE
+
+# Check Spring Boot is running with correct DB connection
+ps aux | grep java
+# Should show: --spring.datasource.url=jdbc:mysql://rds-endpoint:3306/vanvyaapaar
+
+# Check Spring Boot logs for successful DB connection
+tail -100 /var/log/springboot.log | grep -i "hikari\|database\|mysql"
+# Should see: "HikariPool-1 - Start completed"
+
+# Test database connection
+mysql -h $(grep datasource.url /var/log/springboot.log | grep -oP 'jdbc:mysql://\K[^:]+') -u admin -p
+# Enter password from Secrets Manager
+# Then: SELECT COUNT(*) FROM products;
+```
+
+### **3. Verify Backend → S3 Connection**
+```bash
+# Still on backend instance
+# Check S3 environment variables
+ps aux | grep java | grep -o "aws.s3.bucket-name=[^ ]*"
+# Should show: aws.s3.bucket-name=vanvyaapaar-prod-media-assets-XXXXX
+
+ps aux | grep java | grep -o "aws.cloudfront.url=[^ ]*"
+# Should show: aws.cloudfront.url=https://XXXXX.cloudfront.net
+
+# Test S3 upload from backend
+curl -X POST http://localhost:8080/upload/product-image \
+  -F "file=@/home/ec2-user/test.jpg"
+# Should return: {"imageUrl":"https://xxx.cloudfront.net/products/uuid.jpg",...}
+```
+
+### **4. Verify End-to-End Flow**
+```bash
+# From your local machine
+ALB_URL=$(aws cloudformation describe-stacks \
+  --stack-name vanvyaapaar-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' \
+  --output text)
+
+# 1. Test frontend loads
+curl -I $ALB_URL
+# Expected: HTTP/1.1 200 OK
+
+# 2. Test backend API
+curl $ALB_URL/public/products | jq '.[0]'
+# Expected: JSON with product data from RDS
+
+# 3. Test login (frontend → backend → RDS)
+curl -X POST $ALB_URL/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@vanvyaapaar.com","password":"admin123","role":"ADMIN"}' | jq
+# Expected: {"token":"...", "role":"ADMIN", "name":"Admin", "id":10}
+
+# 4. Test image upload (backend → S3)
+curl -X POST $ALB_URL/upload/product-image \
+  -F "file=@test-image.jpg" | jq
+# Expected: {"imageUrl":"https://xxx.cloudfront.net/products/uuid.jpg",...}
+```
+
+---
+
+## �🔍 TROUBLESHOOTING
 
 ### **Frontend Not Loading**
 ```bash
@@ -423,8 +642,10 @@ Your deployment is successful when:
 - [ ] Database has products from dump.sql
 - [ ] Can create new products as seller
 - [ ] Can add products to cart as buyer
-- [ ] Images can be uploaded to S3
+- [ ] Images can be uploaded to S3 via /upload/product-image endpoint
 - [ ] CloudFront serves images
+- [ ] Frontend calls deployed backend (not localhost)
+- [ ] Backend connects to RDS MySQL successfully
 
 ---
 

@@ -460,6 +460,9 @@ Resources:
             git clone ${GitRepositoryURL} project
             cd project/vanpaayaar-backend
             
+            # Set HOME variable for Maven wrapper
+            export HOME=/root
+            
             # Build Spring Boot application
             echo "Building Spring Boot application..."
             if [ -f mvnw ]; then
@@ -637,8 +640,8 @@ Resources:
 
   MediaBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
     Properties:
-      BucketName: !Sub ${EnvironmentName}-media-assets-${AWS::AccountId}
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -715,7 +718,7 @@ Resources:
       Name: !Sub cdn.${HostedZoneName}
       Type: A
       AliasTarget:
-        HostedZoneId: Z2FDTNDATAQYW2  # Fixed ID for CloudFront
+        HostedZoneId: Z2FDTNDATAQYW2 
         DNSName: !GetAtt CloudFrontDistribution.DomainName
         EvaluateTargetHealth: false
 

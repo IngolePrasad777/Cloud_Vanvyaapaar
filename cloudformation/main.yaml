@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VanVyaapaar Main Stack - Orchestrates all nested stacks'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix
+    Type: String
+    Default: vanvyaapaar-prod
+  
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+  
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+  
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+  
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.0.10.0/24
+  
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.0.11.0/24
+  
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t2.micro, t3.micro, t3.small, t3.medium]
+  
+  DBInstanceClass:
+    Description: RDS instance class
+    Type: String
+    Default: db.t3.micro
+  
+  DBUsername:
+    Description: Database admin username
+    Type: String
+    Default: admin
+  
+  KeyName:
+    Description: EC2 KeyPair name (optional)
+    Type: String
+    Default: ""
+  
+  GitRepositoryURL:
+    Description: GitHub repository URL
+    Type: String
+    Default: "https://github.com/IngolePrasad777/Cloud_Vanvyaapaar.git"
+  
+  TemplatesBucketURL:
+    Description: S3 bucket URL where nested stack templates are stored
+    Type: String
+    Default: "https://your-bucket.s3.amazonaws.com/cloudformation"
+
+Resources:
+  # 1. Network Stack
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/1-network.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcCIDR: !Ref VpcCIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        PrivateSubnet1CIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2CIDR: !Ref PrivateSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Network
+
+  # 2. Security Stack
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: NetworkStack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/2-security.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Security
+
+  # 3. Database Stack
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: SecurityStack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/3-database.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        DBInstanceClass: !Ref DBInstanceClass
+        DBUsername: !Ref DBUsername
+        PrivateSubnet1Id: !GetAtt NetworkStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt NetworkStack.Outputs.PrivateSubnet2Id
+        RDSSecurityGroupId: !GetAtt SecurityStack.Outputs.RDSSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Database
+
+  # 4. Storage Stack
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/4-storage.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Storage
+
+  # 5. Load Balancer Stack
+  LoadBalancerStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: SecurityStack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/5-loadbalancer.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        PublicSubnet1Id: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
+        PublicSubnet2Id: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+        ExternalALBSecurityGroupId: !GetAtt SecurityStack.Outputs.ExternalALBSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-LoadBalancer
+
+  # 6. Compute Stack
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - DatabaseStack
+      - StorageStack
+      - LoadBalancerStack
+    Properties:
+      TemplateURL: !Sub ${TemplatesBucketURL}/6-compute.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        GitRepositoryURL: !Ref GitRepositoryURL
+        PublicSubnet1Id: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
+        PublicSubnet2Id: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
+        FrontendSecurityGroupId: !GetAtt SecurityStack.Outputs.FrontendSecurityGroupId
+        BackendSecurityGroupId: !GetAtt SecurityStack.Outputs.BackendSecurityGroupId
+        FrontendTargetGroupArn: !GetAtt LoadBalancerStack.Outputs.FrontendTargetGroupArn
+        BackendTargetGroupArn: !GetAtt LoadBalancerStack.Outputs.BackendTargetGroupArn
+        ExternalALBDNS: !GetAtt LoadBalancerStack.Outputs.ExternalALBDNS
+        RDSEndpoint: !GetAtt DatabaseStack.Outputs.RDSEndpoint
+        RDSInstanceId: !GetAtt DatabaseStack.Outputs.RDSInstanceId
+        MediaBucketName: !GetAtt StorageStack.Outputs.MediaBucketName
+        CloudFrontURL: !GetAtt StorageStack.Outputs.CloudFrontURL
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Compute
+
+Outputs:
+  FrontendURL:
+    Description: Frontend Application URL
+    Value: !Sub "http://${LoadBalancerStack.Outputs.ExternalALBDNS}"
+  
+  BackendURL:
+    Description: Backend API URL
+    Value: !Sub "http://${LoadBalancerStack.Outputs.ExternalALBDNS}"
+  
+  CloudFrontURL:
+    Description: CloudFront CDN URL
+    Value: !GetAtt StorageStack.Outputs.CloudFrontURL
+  
+  MediaBucketName:
+    Description: S3 Media Bucket Name
+    Value: !GetAtt StorageStack.Outputs.MediaBucketName
+  
+  RDSEndpoint:
+    Description: RDS MySQL Endpoint
+    Value: !GetAtt DatabaseStack.Outputs.RDSEndpoint
+  
+  DatabaseName:
+    Description: Database Name
+    Value: vanvyaapaar
+  
+  AdminCredentials:
+    Description: Default admin credentials
+    Value: "Email: admin@vanvyaapaar.com | Password: 123456"
