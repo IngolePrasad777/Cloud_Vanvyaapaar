@@ -11,6 +11,7 @@ phases:
   pre_build:
     commands:
       - echo "Preparing Maven build..."
+      - cd vanpaayaar-backend
       - chmod +x mvnw
   
   build:
@@ -31,6 +32,7 @@ artifacts:
     - target/*.jar
     - appspec.yml
     - scripts/**/*
+  base-directory: vanpaayaar-backend
   name: backend-build-$(date +%Y%m%d-%H%M%S)
 
 cache:
