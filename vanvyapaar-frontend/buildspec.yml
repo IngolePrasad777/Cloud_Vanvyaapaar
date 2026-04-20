@@ -16,6 +16,8 @@ phases:
   build:
     commands:
       - echo "Building React application..."
+      - echo "VITE_API_URL=$VITE_API_URL" > .env
+      - cat .env
       - npm run build
       - echo "Build completed successfully"
   
