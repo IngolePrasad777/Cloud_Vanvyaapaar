@@ -27,7 +27,7 @@ const LandingPageNew = () => {
 
   const heroSlides = [
     {
-      title: "Timeless Tribal Artistry",
+      title: "Timeless Tribal Artistry BY Prasad Ingole",
       subtitle: "Where Heritage Meets Contemporary Elegance",
       description: "Curated collection of authentic handcrafted masterpieces from India's finest tribal artisans",
       image: "https://www.re-thinkingthefuture.com/wp-content/uploads/2021/05/A4086-Handicrafts-from-Northeast-India-Image11.jpg",
@@ -117,7 +117,7 @@ const LandingPageNew = () => {
   return (
     <Box sx={{ overflow: 'hidden', bgcolor: '#FAFAF9', position: 'relative' }}>
       <AnimatedBackground variant="waves" intensity="light" color="#D4A574" />
-      <FloatingElements 
+      <FloatingElements
         showScrollTop={true}
         showQuickActions={true}
         quickActions={[
@@ -1538,106 +1538,106 @@ const LandingPageNew = () => {
                         }
                       }}
                     >
-                    <Box
-                      sx={{
-                        height: 280,
-                        position: 'relative',
-                        overflow: 'hidden',
-                        bgcolor: alpha(category.color, 0.05)
-                      }}
-                    >
-                      {/* Category Image */}
-                      <Box
-                        component="img"
-                        src={category.image}
-                        alt={category.name}
-                        sx={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          transition: 'transform 0.5s ease',
-                          '&:hover': {
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-
-                      {/* Overlay */}
-                      <Box
-                        className="category-overlay"
-                        sx={{
-                          position: 'absolute',
-                          inset: 0,
-                          background: `linear-gradient(135deg, ${alpha(category.color, 0.3)} 0%, ${alpha(category.color, 0.5)} 100%)`,
-                          opacity: 0,
-                          transition: 'opacity 0.5s ease'
-                        }}
-                      />
-
-                      {/* Icon Overlay */}
                       <Box
                         sx={{
-                          position: 'absolute',
-                          bottom: 16,
-                          right: 16,
-                          bgcolor: 'white',
-                          borderRadius: '50%',
-                          p: 2,
-                          boxShadow: `0 4px 12px ${alpha(category.color, 0.3)}`,
-                          zIndex: 2
+                          height: 280,
+                          position: 'relative',
+                          overflow: 'hidden',
+                          bgcolor: alpha(category.color, 0.05)
                         }}
                       >
+                        {/* Category Image */}
                         <Box
-                          className="category-icon"
+                          component="img"
+                          src={category.image}
+                          alt={category.name}
                           sx={{
-                            color: category.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            transition: 'transform 0.5s ease',
+                            '&:hover': {
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+
+                        {/* Overlay */}
+                        <Box
+                          className="category-overlay"
+                          sx={{
+                            position: 'absolute',
+                            inset: 0,
+                            background: `linear-gradient(135deg, ${alpha(category.color, 0.3)} 0%, ${alpha(category.color, 0.5)} 100%)`,
+                            opacity: 0,
+                            transition: 'opacity 0.5s ease'
+                          }}
+                        />
+
+                        {/* Icon Overlay */}
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            bottom: 16,
+                            right: 16,
+                            bgcolor: 'white',
+                            borderRadius: '50%',
+                            p: 2,
+                            boxShadow: `0 4px 12px ${alpha(category.color, 0.3)}`,
+                            zIndex: 2
                           }}
                         >
-                          {category.icon}
+                          <Box
+                            className="category-icon"
+                            sx={{
+                              color: category.color,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            {category.icon}
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                    <CardContent sx={{ p: 4 }}>
-                      <Typography
-                        variant="h5"
-                        sx={{
-                          fontWeight: 400,
-                          mb: 1.5,
-                          color: '#1F2937',
-                          letterSpacing: '-0.01em'
-                        }}
-                      >
-                        {category.name}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: '#6B7280',
-                          mb: 2,
-                          lineHeight: 1.7,
-                          fontSize: '0.95rem'
-                        }}
-                      >
-                        {category.description}
-                      </Typography>
-                      <Chip
-                        label={category.count}
-                        size="small"
-                        sx={{
-                          bgcolor: alpha(category.color, 0.1),
-                          color: category.color,
-                          fontWeight: 600,
-                          fontSize: '0.75rem',
-                          letterSpacing: '0.5px',
-                          height: 28,
-                          borderRadius: 0
-                        }}
-                      />
-                    </CardContent>
-                  </EnhancedCard>
+                      <CardContent sx={{ p: 4 }}>
+                        <Typography
+                          variant="h5"
+                          sx={{
+                            fontWeight: 400,
+                            mb: 1.5,
+                            color: '#1F2937',
+                            letterSpacing: '-0.01em'
+                          }}
+                        >
+                          {category.name}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: '#6B7280',
+                            mb: 2,
+                            lineHeight: 1.7,
+                            fontSize: '0.95rem'
+                          }}
+                        >
+                          {category.description}
+                        </Typography>
+                        <Chip
+                          label={category.count}
+                          size="small"
+                          sx={{
+                            bgcolor: alpha(category.color, 0.1),
+                            color: category.color,
+                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            letterSpacing: '0.5px',
+                            height: 28,
+                            borderRadius: 0
+                          }}
+                        />
+                      </CardContent>
+                    </EnhancedCard>
                   </Link>
                 </motion.div>
               </Grid>
