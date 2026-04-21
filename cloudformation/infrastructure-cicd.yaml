@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VanVyaapaar CI/CD Pipeline - CodePipeline, CodeBuild, CodeDeploy'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name (must match existing stack)
+    Type: String
+    Default: vanvyaapaar-prod
+  
+  ExistingStackName:
+    Description: Name of the existing infrastructure stack
+    Type: String
+    Default: vanvyaapaar-prod
+  
+  GitHubToken:
+    Description: GitHub Personal Access Token
+    Type: String
+    NoEcho: true
+  
+  GitHubOwner:
+    Description: GitHub repository owner
+    Type: String
+    Default: IngolePrasad777
+  
+  GitHubRepo:
+    Description: GitHub repository name
+    Type: String
+    Default: Cloud_Vanvyaapaar
+  
+  GitHubBranch:
+    Description: GitHub branch to track
+    Type: String
+    Default: main
+
+Resources:
+  # ==============================
+  # S3 BUCKET FOR ARTIFACTS
+  # ==============================
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-cicd-artifacts-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ==============================
+  # IAM ROLES
+  # ==============================
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetObjectVersion
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt FrontendBuildProject.Arn
+                  - !GetAtt BackendBuildProject.Arn
+              - Effect: Allow
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplication
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Resource: '*'
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ExistingStackName}/*
+
+  CodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+  # ==============================
+  # CODEBUILD PROJECTS
+  # ==============================
+  FrontendBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${EnvironmentName}-frontend-build
+      Description: Build React frontend application
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref EnvironmentName
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: vanvyapaar-frontend/buildspec.yml
+      TimeoutInMinutes: 15
+      Cache:
+        Type: S3
+        Location: !Sub ${ArtifactBucket}/build-cache
+
+  BackendBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${EnvironmentName}-backend-build
+      Description: Build Spring Boot backend application
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: ENVIRONMENT
+            Value: !Ref EnvironmentName
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: vanpaayaar-backend/buildspec.yml
+      TimeoutInMinutes: 20
+      Cache:
+        Type: S3
+        Location: !Sub ${ArtifactBucket}/build-cache
+
+  # ==============================
+  # CODEDEPLOY APPLICATIONS
+  # ==============================
+  FrontendCodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub ${EnvironmentName}-frontend
+      ComputePlatform: Server
+
+  BackendCodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub ${EnvironmentName}-backend
+      ComputePlatform: Server
+
+  FrontendDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref FrontendCodeDeployApp
+      DeploymentGroupName: !Sub ${EnvironmentName}-frontend-dg
+      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: aws:cloudformation:stack-name
+          Value: !Ref ExistingStackName
+        - Type: KEY_AND_VALUE
+          Key: Name
+          Value: !Sub ${EnvironmentName}-Frontend
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+          - DEPLOYMENT_STOP_ON_ALARM
+
+  BackendDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref BackendCodeDeployApp
+      DeploymentGroupName: !Sub ${EnvironmentName}-backend-dg
+      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: aws:cloudformation:stack-name
+          Value: !Ref ExistingStackName
+        - Type: KEY_AND_VALUE
+          Key: Name
+          Value: !Sub ${EnvironmentName}-Backend
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+          - DEPLOYMENT_STOP_ON_ALARM
+
+  # ==============================
+  # CODEPIPELINE
+  # ==============================
+  CICDPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${EnvironmentName}-pipeline
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        # Stage 1: Source from GitHub
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubToken
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: SourceOutput
+        
+        # Stage 2: Build Frontend & Backend in Parallel
+        - Name: Build
+          Actions:
+            - Name: BuildFrontend
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref FrontendBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: FrontendBuildOutput
+              RunOrder: 1
+            
+            - Name: BuildBackend
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref BackendBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BackendBuildOutput
+              RunOrder: 1
+        
+        # Stage 3: Deploy Frontend & Backend in Parallel
+        - Name: Deploy
+          Actions:
+            - Name: DeployFrontend
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeploy
+                Version: '1'
+              Configuration:
+                ApplicationName: !Ref FrontendCodeDeployApp
+                DeploymentGroupName: !Ref FrontendDeploymentGroup
+              InputArtifacts:
+                - Name: FrontendBuildOutput
+              RunOrder: 1
+            
+            - Name: DeployBackend
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeploy
+                Version: '1'
+              Configuration:
+                ApplicationName: !Ref BackendCodeDeployApp
+                DeploymentGroupName: !Ref BackendDeploymentGroup
+              InputArtifacts:
+                - Name: BackendBuildOutput
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: CI/CD Pipeline Name
+    Value: !Ref CICDPipeline
+    Export:
+      Name: !Sub ${EnvironmentName}-PipelineName
+  
+  PipelineURL:
+    Description: CI/CD Pipeline Console URL
+    Value: !Sub https://console.aws.amazon.com/codesuite/codepipeline/pipelines/${CICDPipeline}/view?region=${AWS::Region}
+  
+  ArtifactBucketName:
+    Description: S3 Bucket for Build Artifacts
+    Value: !Ref ArtifactBucket
+    Export:
+      Name: !Sub ${EnvironmentName}-ArtifactBucket
+  
+  FrontendCodeDeployApp:
+    Description: Frontend CodeDeploy Application
+    Value: !Ref FrontendCodeDeployApp
+  
+  BackendCodeDeployApp:
+    Description: Backend CodeDeploy Application
+    Value: !Ref BackendCodeDeployApp
