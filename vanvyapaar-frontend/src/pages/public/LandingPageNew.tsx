@@ -27,7 +27,7 @@ const LandingPageNew = () => {
 
   const heroSlides = [
     {
-      title: "Timeless Tribal Artistry ",
+      title: "Timeless Tribal Artistry  BY PRASAD INGOLE ",
       subtitle: "Where Heritage Meets Contemporary Elegance",
       description: "Curated collection of authentic handcrafted masterpieces from India's finest tribal artisans",
       image: "https://www.re-thinkingthefuture.com/wp-content/uploads/2021/05/A4086-Handicrafts-from-Northeast-India-Image11.jpg",
