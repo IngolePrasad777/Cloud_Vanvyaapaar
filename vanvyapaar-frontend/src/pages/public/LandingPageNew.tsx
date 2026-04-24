@@ -27,14 +27,14 @@ const LandingPageNew = () => {
 
   const heroSlides = [
     {
-      title: "Timeless Tribal Artistry  BY PRASAD INGOLE ",
+      title: "Timeless Tribal Artistry  BY PRASAD & SAMIKSHA ",
       subtitle: "Where Heritage Meets Contemporary Elegance",
       description: "Curated collection of authentic handcrafted masterpieces from India's finest tribal artisans",
       image: "https://www.re-thinkingthefuture.com/wp-content/uploads/2021/05/A4086-Handicrafts-from-Northeast-India-Image11.jpg",
       gradient: "linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(55, 65, 81, 0.9) 100%)"
     },
     {
-      title: "Empowering Artisan Communities",
+      title: "Empowering Artisan Communities BY PRASAD & SAMIKSHA",
       subtitle: "Preserving Traditions, Creating Futures",
       description: "Every purchase directly supports traditional craftspeople and their families",
       image: "https://exclusivelane.com/cdn/shop/files/EL-005-1686_A_580x.jpg?v=1740476654",
@@ -42,7 +42,7 @@ const LandingPageNew = () => {
     },
     {
       title: "Heritage Woven in Gold",
-      subtitle: "Centuries of Craftsmanship in Every Thread",
+      subtitle: "Centuries of Craftsmanship in Every Thread BY PRASAD & SAMIKSHA",
       description: "Handwoven textiles that tell stories of tradition, skill, and cultural pride",
       image: "https://rukminim2.flixcart.com/image/832/832/xif0q/sari/i/b/g/free-s814-melisha-red-gugaliya-unstitched-original-imagupqmdmsqtzyc.jpeg?q=70&crop=false",
       gradient: "linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(51, 65, 85, 0.9) 100%)"
