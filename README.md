@@ -30,7 +30,6 @@ All infrastructure is defined as **Infrastructure as Code** using AWS CloudForma
 
 ## CI/CD Pipeline
 
-![CI/CD Diagram](Architecture/CICD_Diagram-Page-1.png)
 
 Every `git push` to `main` automatically builds and deploys the full application.
 
