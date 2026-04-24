@@ -27,14 +27,14 @@ const LandingPageNew = () => {
 
   const heroSlides = [
     {
-      title: "Timeless Tribal Artistry  BY PRASAD & SAMIKSHA ",
+      title: "Timeless Tribal Artistry BY PRASAD & SAMIKSHA Cloud",
       subtitle: "Where Heritage Meets Contemporary Elegance",
       description: "Curated collection of authentic handcrafted masterpieces from India's finest tribal artisans",
       image: "https://www.re-thinkingthefuture.com/wp-content/uploads/2021/05/A4086-Handicrafts-from-Northeast-India-Image11.jpg",
       gradient: "linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(55, 65, 81, 0.9) 100%)"
     },
     {
-      title: "Empowering Artisan Communities BY PRASAD & SAMIKSHA",
+      title: "Empowering Artisan Communities BY PRASAD & SAMIKSHA ",
       subtitle: "Preserving Traditions, Creating Futures",
       description: "Every purchase directly supports traditional craftspeople and their families",
       image: "https://exclusivelane.com/cdn/shop/files/EL-005-1686_A_580x.jpg?v=1740476654",
