@@ -1,6 +1,21 @@
 # VanVyaapaar — Tribal Crafts E-Commerce Platform
 
-> A production-grade e-commerce backend for tribal artisans, built with Spring Boot 3, featuring a geo-spatial delivery engine, event-driven architecture with Apache Kafka, real-time WebSocket tracking, and deployed on AWS with automated CI/CD.
+> A production-grade e-commerce backend for tribal artisans — built with Spring Boot 3, deployed on AWS with automated CI/CD.
+
+---
+
+## Highlights
+
+| | |
+|---|---|
+| 🔗 **30+ REST APIs** | Buyer, Seller, Admin, Delivery, Payment, Chatbot |
+| 🔐 **JWT + RBAC** | Stateless auth with role-based route protection |
+| 🗺️ **Redis GEO Delivery** | Sub-100ms geo-spatial agent assignment |
+| ⚡ **14 Kafka Topics** | Event-driven order and delivery processing |
+| 📡 **WebSocket Tracking** | Real-time delivery updates via STOMP |
+| ☁️ **AWS Deployment** | EC2, RDS, S3, CloudFront, ALB, Secrets Manager |
+| 🐳 **Dockerized** | Full stack runs with a single `docker-compose up` |
+| 💳 **Razorpay Payments** | Order creation, signature verification, failure handling |
 
 ---
 
@@ -10,280 +25,236 @@
 
 ---
 
-## Backend Overview
+## Backend Architecture
 
-The backend is a **Spring Boot 3 monolith** structured around three user roles — Admin, Seller, and Buyer — with a layered delivery system built on top. The delivery layer evolved in two phases: geo-spatial agent assignment using Redis, and event-driven order processing using Kafka.
+```
+  HTTP Request
+       │
+       ▼
+  Controller Layer          — REST endpoints, request validation, response mapping
+       │
+       ▼
+  Service Layer             — Business logic, transactions, event publishing
+       │
+       ▼
+  Repository Layer          — Spring Data JPA interfaces, custom JPQL queries
+       │
+       ▼
+  ┌────────────────────────────────────────┐
+  │  MySQL      Redis       Kafka          │
+  │  (RDS)      (Geo +      (Event         │
+  │             Cache)       Streaming)    │
+  └────────────────────────────────────────┘
+```
 
-**Tech Stack:**
-- Java 17 + Spring Boot 3.5.6
-- Spring Security + JWT (stateless auth)
-- Spring Data JPA + MySQL 8 (Amazon RDS)
-- Spring Data Redis + Jedis (geo-spatial indexing)
-- Spring Kafka + Apache Kafka (event streaming)
-- Spring WebSocket + STOMP (real-time updates)
-- Razorpay SDK (payment gateway)
-- Lombok + Bean Validation
+Each domain (Buyer, Seller, Admin, Delivery) follows the same layered structure independently — `BuyerController → BuyerService → BuyerServiceImpl → BuyerRepository`.
+
+Security sits as a filter before the controller layer — `JwtAuthFilter` validates the token and sets the `SecurityContext` before any controller method is reached.
 
 ---
 
-## Package Structure
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Java 17 |
+| Framework | Spring Boot 3.5.6 |
+| Auth | Spring Security + JWT (JJWT, stateless) |
+| Database | MySQL 8 — Spring Data JPA + Hibernate |
+| Cache / Geo | Redis — Spring Data Redis + Jedis |
+| Events | Apache Kafka — Spring Kafka |
+| Real-time | WebSocket — STOMP over SockJS |
+| Payments | Razorpay SDK |
+| Email | Spring Mail (Gmail SMTP) |
+| Build | Maven + Lombok |
+
+---
+
+## Domain Model
+
+The platform has three user roles — **Admin**, **Seller**, **Buyer** — all sharing a common `Base` entity via JPA joined-table inheritance.
 
 ```
-com.tribal/
-├── config/
-│   ├── RedisConfig.java          ← Jedis connection pool + RedisTemplate
-│   ├── WebSocketConfig.java      ← STOMP broker + SockJS endpoint
-│   ├── KafkaConfig.java          ← Producer/Consumer factory beans
-│   ├── KafkaTopicConfig.java     ← Topic definitions (14 topics)
-│   ├── KafkaHealthIndicator.java ← Actuator health check for Kafka
-│   └── GeoProperties.java        ← Geo config (radius, stale timeout)
-│
-├── security/
-│   ├── JwtUtil.java              ← Token generation + validation (JJWT)
-│   ├── JwtAuthFilter.java        ← OncePerRequestFilter — extracts + validates JWT
-│   └── SecurityConfig.java       ← Role-based route protection
-│
-├── model/                        ← JPA entities
-│   ├── Base.java                 ← @SuperBuilder base (id, name, email, password, phone, address)
-│   ├── Buyer.java                ← extends Base, has Orders + Cart
-│   ├── Seller.java               ← extends Base, has approval status
-│   ├── Admin.java                ← extends Base
-│   ├── Product.java
-│   ├── Order.java                ← OrderStatus enum, delivery address fields
-│   ├── Cart.java
-│   ├── Delivery.java             ← DeliveryStatus enum, agent FK, order FK
-│   ├── DeliveryAgent.java        ← latitude, longitude, workload, vehicle type
-│   ├── Payment.java
-│   ├── Notification.java
-│   ├── Review.java
-│   ├── Wishlist.java
-│   ├── Coupon.java
-│   ├── Complaint.java
-│   └── ServiceableArea.java
-│
-├── event/                        ← Kafka event schemas
-│   ├── DeliveryEvent.java        ← Abstract base (eventType, correlationId, timestamp)
-│   ├── OrderCreatedEvent.java
-│   ├── OrderUpdatedEvent.java
-│   ├── OrderCancelledEvent.java
-│   ├── DeliveryCreatedEvent.java
-│   ├── DeliveryAssignedEvent.java
-│   ├── DeliveryPickedUpEvent.java
-│   ├── DeliveryInTransitEvent.java
-│   ├── DeliveryDeliveredEvent.java
-│   ├── DeliveryCancelledEvent.java
-│   ├── AgentLocationUpdatedEvent.java
-│   ├── AgentStatusChangedEvent.java
-│   ├── AgentAssignedEvent.java
-│   └── AgentUnassignedEvent.java
-│
-├── service/
-│   ├── GeoService.java           ← Redis GEOADD/GEORADIUS/GEODIST operations
-│   ├── DeliveryService.java      ← Multi-radius agent assignment + scoring
-│   ├── EventPublisher.java       ← Kafka publish with graceful degradation
-│   ├── EventConsumer.java        ← @KafkaListener → WebSocket bridge
-│   ├── WebSocketService.java     ← Channel-based broadcasting
-│   ├── OrderStatusSyncService.java ← Bidirectional delivery↔order status sync
-│   ├── PaymentConfirmationService.java ← Delivery creation after payment
-│   ├── EmailNotificationService.java
-│   ├── NotificationService.java
-│   ├── BatchGeoService.java      ← Bulk agent location updates
-│   ├── MetricsService.java       ← Performance counters
-│   ├── BuyerService.java
-│   ├── SellerService.java
-│   ├── AdminService.java
-│   ├── PaymentService.java       ← Razorpay order creation + verification
-│   ├── ChatbotService.java
-│   └── impl/                     ← All implementations
-│
-├── controller/                   ← 20 REST controllers
-│   ├── AuthController.java       ← /api/auth/register, /login
-│   ├── BuyerController.java      ← /api/buyer/**
-│   ├── SellerController.java     ← /api/seller/**
-│   ├── AdminController.java      ← /api/admin/**
-│   ├── DeliveryController.java   ← /api/delivery/**
-│   ├── DeliveryAgentController.java
-│   ├── OrderDeliveryIntegrationController.java
-│   ├── PaymentController.java    ← Razorpay webhook + verification
-│   ├── HealthController.java     ← /api/health (Redis, WS, DB)
-│   ├── MetricsController.java
-│   ├── NotificationController.java
-│   ├── ChatbotController.java
-│   ├── BatchGeoController.java
-│   └── WebSocketController.java
-│
-├── repository/                   ← 15 Spring Data JPA repositories
-├── dto/                          ← Request/Response DTOs
-├── exception/                    ← GlobalExceptionHandler
-└── util/
-    └── RetryUtil.java            ← Exponential backoff
+Base (id, name, email, password, phone, address, pincode)
+ ├── Buyer      → has Orders, Cart
+ ├── Seller     → has Products, adminApprovalStatus
+ └── Admin
+
+Product        → belongs to Seller
+Order          → belongs to Buyer + Seller, has OrderStatus enum, delivery address fields
+Cart           → belongs to Buyer + Product
+Payment        → belongs to Buyer, Razorpay fields
+Delivery       → belongs to Order + DeliveryAgent, has DeliveryStatus enum
+DeliveryAgent  → has GPS coordinates, workload, vehicle type
+Notification   → belongs to any user role
+Review         → belongs to Buyer + Product
+Wishlist       → belongs to Buyer + Product
+Coupon         → managed by Admin
+Complaint      → managed by Admin
+ServiceableArea
 ```
 
 ---
 
-## Delivery System — Phase 1: Geo-Spatial Engine
+## API Reference
 
-The core delivery problem: find the nearest available agent to a delivery location in under 100ms.
+### Auth — `/auth`
 
-**Agent locations are indexed in Redis:**
-```java
-// GEOADD agents <lng> <lat> <agentId>
-redisTemplate.opsForGeo().add("agents", new Point(lng, lat), "agent:" + agentId);
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/login` | Login for all roles — returns JWT + role + id |
+| POST | `/auth/signup/buyer` | Buyer registration |
+| POST | `/auth/signup/seller` | Seller registration — notifies admin, status = PENDING |
+
+Login response:
+```json
+{ "token": "...", "role": "BUYER", "name": "Ravi", "id": 12 }
 ```
 
-**On order placement, multi-radius search runs:**
-```java
-// Expands 5km → 10km → 15km until agents are found
-for (double radius : List.of(5.0, 10.0, 15.0)) {
-    GeoResults<RedisGeoCommands.GeoLocation<String>> results =
-        redisTemplate.opsForGeo().radius("agents",
-            new Circle(new Point(lng, lat), new Distance(radius, KILOMETERS)),
-            GeoRadiusCommandArgs.newGeoRadiusArgs().includeDistance().sortAscending());
-    if (!results.getContent().isEmpty()) break;
-}
-```
+---
 
-**Agents are scored before assignment:**
+### Buyer — `/buyer` `[ROLE_BUYER]`
+
+| Group | Endpoints |
+|---|---|
+| Products | `GET /buyer/products` — `GET /buyer/products/{id}` |
+| Search | `GET /buyer/search?keyword=` — `GET /buyer/filter/category?category=` — `GET /buyer/filter/price?min=&max=` |
+| Cart | `POST /{buyerId}/cart/add/{productId}` — `GET /{buyerId}/cart` — `PUT /cart/{cartItemId}` — `DELETE /cart/{cartItemId}` |
+| Orders | `POST /{buyerId}/orders` — `GET /{buyerId}/orders` |
+| Wishlist | `POST /{buyerId}/wishlist/{productId}` — `GET /{buyerId}/wishlist` — `DELETE /{buyerId}/wishlist/{productId}` |
+| Reviews | `POST /reviews` — `GET /products/{productId}/reviews` |
+| Profile | `GET /{buyerId}/profile` — `PUT /{buyerId}/profile` |
+
+---
+
+### Seller — `/seller` `[ROLE_SELLER]`
+
+| Group | Endpoints |
+|---|---|
+| Profile | `GET /{sellerId}` — `PUT /{sellerId}` — `DELETE /{sellerId}` |
+| Products | `POST /{sellerId}/products` — `GET /{sellerId}/products` — `PUT /products/{productId}` — `DELETE /products/{productId}` |
+| Orders | `GET /{sellerId}/orders` — `PUT /orders/{orderId}/status?status=` |
+| Dashboard | `GET /{sellerId}/dashboard` — total sales, monthly sales, pending orders, product count |
+| Analytics | `GET /{sellerId}/analytics?period=month` |
+| Notifications | `GET /{sellerId}/notifications` |
+
+---
+
+### Admin — `/admin` `[ROLE_ADMIN]`
+
+| Group | Endpoints |
+|---|---|
+| Dashboard | `GET /admin/dashboard/metrics` |
+| Sellers | `GET /sellers` — `GET /sellers/pending?status=` — `PUT /sellers/{id}/approve` — `PUT /sellers/{id}/suspend` — `PUT /sellers/{id}/delete` |
+| Buyers | `GET /buyers` — `GET /buyers/{id}` — `DELETE /buyers/{id}` — `PUT /buyers/{id}/suspend` |
+| Products | `GET /products` — `DELETE /products/{id}` |
+| Orders | `GET /orders` — `GET /orders/{id}` |
+| Coupons | `GET /coupons` — `POST /coupons` — `PUT /coupons/{id}` — `PUT /coupons/{id}/deactivate` — `DELETE /coupons/{id}` |
+| Complaints | `GET /complaints` — `PUT /complaints/{id}/close` |
+| Profile | `GET /profile` — `PUT /profile/{id}` — `PUT /profile/change-password` |
+
+---
+
+### Payment — `/payment`
+
+Razorpay integration. Delivery is created only after payment is confirmed.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/payment/create-order` | Creates Razorpay order, returns orderId + keyId |
+| POST | `/payment/verify` | Verifies HMAC signature |
+| POST | `/payment/success` | Marks payment SUCCESS → triggers delivery creation |
+| POST | `/payment/failure` | Marks payment FAILED → sends failure notification |
+| GET | `/payment/buyer/{buyerId}` | Payment history |
+
+---
+
+### Delivery — `/api/delivery`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/delivery/{orderId}` | Create delivery for order |
+| GET | `/delivery/track/{trackingId}` | Public tracking |
+| PUT | `/delivery/{id}/status` | Update delivery status |
+| PUT | `/delivery/agents/{agentId}/location` | Agent GPS update → publishes Kafka event |
+| GET | `/delivery/buyer/{buyerId}` | Buyer's deliveries |
+| GET | `/delivery/seller/{sellerId}` | Seller's deliveries |
+| GET | `/delivery/agents/nearby` | Find agents near coordinates |
+
+Agent assignment uses Redis geo-spatial indexing — multi-radius search (5km → 10km → 15km) with scoring:
 ```
 Score = (Distance × 0.4) + (Availability × 0.3) + (Rating × 0.2) + (Workload × 0.1)
 ```
-
-**Circuit breaker — Redis unavailable → falls back to DB query:**
-```java
-try {
-    return geoService.findNearbyAgents(lat, lng, radius);
-} catch (RedisConnectionFailureException e) {
-    log.warn("Redis unavailable, falling back to DB");
-    return agentRepository.findAvailableAgents(pincode);
-}
-```
-
-**Performance result:** Agent lookup dropped from 2000ms+ (DB pincode scan) to **<100ms** (Redis geo query).
+Falls back to DB query if Redis is unavailable.
 
 ---
 
-## Delivery System — Phase 2: Event-Driven Architecture
+### Other Endpoints
 
-Every meaningful delivery action now emits a domain event through Kafka, decoupling services and enabling async processing.
+| Controller | Path | Purpose |
+|---|---|---|
+| HealthController | `/api/health` | Redis, WebSocket, DB, Kafka status |
+| NotificationController | `/api/notifications` | In-app notifications per user |
+| ChatbotController | `/api/chatbot` | Product/order Q&A chatbot |
+| MetricsController | `/api/metrics` | Performance counters |
+| BatchGeoController | `/api/batch-geo` | Bulk agent location updates |
+| WebSocketController | `/ws` | STOMP WebSocket endpoint |
 
-**14 Kafka topics across 4 domains:**
+---
+
+## Security
+
+JWT stateless auth — `JwtAuthFilter` runs on every request, extracts the token, and sets `SecurityContext`.
+
 ```
-Order Events:    order.created | order.updated | order.cancelled
-Delivery Events: delivery.created | delivery.assigned | delivery.picked-up |
-                 delivery.in-transit | delivery.delivered | delivery.cancelled
-Agent Events:    agent.location-updated | agent.status-changed |
-                 agent.assigned | agent.unassigned
-System Events:   delivery.dead-letter
-```
-
-**EventPublisher — graceful degradation when Kafka is down:**
-```java
-@Service
-public class EventPublisherImpl implements EventPublisher {
-
-    @Override
-    public void publishEvent(DeliveryEvent event) {
-        if (!kafkaEnabled) return;  // system continues without Kafka
-        try {
-            String topic = resolveTopicForEvent(event);
-            kafkaTemplate.send(topic, event.getAggregateId(), event);
-        } catch (Exception e) {
-            log.error("Event publish failed — system continues: {}", e.getMessage());
-        }
-    }
-}
+POST /auth/login  →  JWT (10h expiry)  →  include as  Authorization: Bearer <token>
 ```
 
-**EventConsumer — Kafka → WebSocket bridge:**
-```java
-@KafkaListener(topics = "agent.location-updated", groupId = "vanvyaapaar-delivery-group")
-public void handleAgentLocationUpdated(AgentLocationUpdatedEvent event) {
-    webSocketService.sendToAgent(event.getAgentId(), "location_updated", event);
-    webSocketService.sendToAdmins("agent_location_updated", event);
-}
-
-@KafkaListener(topics = "delivery.assigned")
-public void handleDeliveryAssigned(DeliveryAssignedEvent event) {
-    webSocketService.sendToBuyer(event.getBuyerId(), "delivery_assigned", event);
-    webSocketService.sendToAgent(event.getAgentId(), "new_delivery", event);
-}
+Route protection:
+```
+/buyer/**    →  ROLE_BUYER
+/seller/**   →  ROLE_SELLER
+/admin/**    →  ROLE_ADMIN
+/auth/**     →  public
+/payment/**  →  public
+/api/delivery/track/**  →  public
 ```
 
-**Order → Delivery event chain:**
+---
+
+## Event-Driven Layer (Kafka)
+
+Key delivery actions publish domain events. The system continues to work if Kafka is unavailable — publishing failures are caught and logged without breaking the request.
+
 ```
-Buyer places order
-    → OrderCreatedEvent → order.created
-        → EventConsumer creates Delivery
-            → DeliveryCreatedEvent → delivery.created
-                → GeoService finds nearest agent
-                    → AgentAssignedEvent → delivery.assigned
-                        → WebSocket broadcasts to Buyer + Agent + Admin
+Agent location update  →  AgentLocationUpdatedEvent  →  agent.location-updated
+Order placed           →  OrderCreatedEvent           →  order.created
+Delivery assigned      →  DeliveryAssignedEvent       →  delivery.assigned
+Delivery completed     →  DeliveryDeliveredEvent      →  delivery.delivered
 ```
+
+EventConsumer bridges Kafka → WebSocket, broadcasting updates to connected clients in real time.
+
+**14 topics** across order, delivery, agent, and system domains.
 
 ---
 
 ## Real-Time WebSocket Channels
 
 ```
-/topic/buyer/{buyerId}    ← order status, delivery updates
-/topic/agent/{agentId}    ← new assignments, location ack
-/topic/delivery/{id}      ← live tracking updates
-/topic/admin              ← system-wide monitoring
+/topic/buyer/{buyerId}     ←  order status, delivery updates
+/topic/agent/{agentId}     ←  new assignments, location ack
+/topic/delivery/{id}       ←  live tracking
+/topic/admin               ←  system-wide monitoring
 ```
 
-All channels use **STOMP over SockJS** with <50ms broadcast latency.
-
----
-
-## Security
-
-JWT-based stateless authentication with role-based route protection:
-
-```java
-// JwtAuthFilter extracts token → sets SecurityContext
-// SecurityConfig enforces role boundaries:
-.requestMatchers("/api/buyer/**").hasRole("BUYER")
-.requestMatchers("/api/seller/**").hasRole("SELLER")
-.requestMatchers("/api/admin/**").hasRole("ADMIN")
-.requestMatchers("/api/delivery/**").hasAnyRole("BUYER", "SELLER", "ADMIN")
-```
-
-Passwords are BCrypt-hashed. JWT secret is externalized via environment variable (AWS Secrets Manager in production).
-
----
-
-## Payment Flow
-
-Razorpay integration with delivery creation gated on payment confirmation:
-
-```
-POST /api/payment/create-order   ← creates Razorpay order
-POST /api/payment/verify         ← verifies signature
-    → PaymentConfirmationService.onPaymentSuccess()
-        → DeliveryService.createDelivery()   ← delivery only after payment
-            → EventPublisher.publishEvent(OrderCreatedEvent)
-```
-
----
-
-## API Summary
-
-| Domain | Base Path | Key Endpoints |
-|---|---|---|
-| Auth | `/api/auth` | `POST /register`, `POST /login` |
-| Buyer | `/api/buyer` | cart, orders, wishlist, reviews, profile |
-| Seller | `/api/seller` | products, orders, analytics, notifications |
-| Admin | `/api/admin` | seller approval, user management, dashboard |
-| Delivery | `/api/delivery` | create, assign, status update, tracking |
-| Agent | `/api/delivery/agents` | register, location update, availability |
-| Payment | `/api/payment` | Razorpay order creation + verification |
-| Health | `/api/health` | Redis, WebSocket, DB, Kafka status |
+STOMP over SockJS — <50ms broadcast latency.
 
 ---
 
 ## AWS Infrastructure
 
-Infrastructure is defined as code in CloudFormation — single command deploys the full production environment.
+Infrastructure as code via CloudFormation — single command deploys the full production environment.
 
 | Service | Role |
 |---|---|
@@ -329,15 +300,10 @@ git commit --allow-empty -m "Bring up" && git push origin main
 
 ## Running Locally
 
-**Prerequisites:** Java 17, MySQL 8, Redis, (optional) Kafka
+**Prerequisites:** Java 17, MySQL 8, Redis — Kafka is optional (system degrades gracefully)
 
 ```bash
-# Clone and configure
-git clone <repo>
 cd vanpaayaar-backend
-
-# Set DB credentials in application.properties
-# Then run
 ./mvnw spring-boot:run
 ```
 
@@ -349,10 +315,3 @@ docker-compose up
 Backend starts on `http://localhost:8080`
 
 ---
-
-## Default Admin
-
-| Field | Value |
-|---|---|
-| Email | admin@vanvyaapaar.com |
-| Password | admin123 |
